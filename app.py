@@ -6,17 +6,17 @@ st.set_page_config(
     layout="wide"
 )
 
-# =====================
+# ==========================
 # LOAD EXCEL
-# =====================
+# ==========================
 
 df = pd.read_excel(
     "Clariflocculator Running Status.xlsx"
 )
 
-# =====================
-# CSS
-# =====================
+# ==========================
+# LIGHT SCADA THEME
+# ==========================
 
 st.markdown("""
 <style>
@@ -25,214 +25,156 @@ st.markdown("""
     background:#f4f6f8;
 }
 
-.scada-box{
+.block-container{
+    padding-top:1rem;
+}
+
+.scada-card{
     background:white;
     border-radius:15px;
     padding:20px;
-    box-shadow:0 2px 10px rgba(0,0,0,0.15);
+    box-shadow:0px 2px 8px rgba(0,0,0,0.15);
 }
 
-.running-light{
-    width:20px;
-    height:20px;
-    background:#00cc44;
+.tank{
+    width:280px;
+    height:280px;
+    border:10px solid #2F80ED;
     border-radius:50%;
-    display:inline-block;
-    box-shadow:0 0 20px #00cc44;
-}
-
-.stop-light{
-    width:20px;
-    height:20px;
-    background:red;
-    border-radius:50%;
-    display:inline-block;
-    box-shadow:0 0 20px red;
-}
-
-.clarifier{
     position:relative;
-    width:250px;
-    height:250px;
-    border:8px solid #3A7BD5;
-    border-radius:50%;
     margin:auto;
-    background:#dfefff;
+    background:#dceeff;
 }
 
 .bridge{
     position:absolute;
     top:50%;
     left:50%;
-    width:180px;
-    height:6px;
+    width:200px;
+    height:8px;
     background:#444;
+}
+
+.running{
+    animation:rotate 8s linear infinite;
     transform-origin:center center;
-}
-
-.rotate{
-    animation:spin 8s linear infinite;
-}
-
-.stop{
     transform:translate(-50%,-50%);
 }
 
-.rotate{
+.stopped{
     transform:translate(-50%,-50%);
 }
 
-@keyframes spin{
+.green-light{
+    width:24px;
+    height:24px;
+    border-radius:50%;
+    background:#00C853;
+    margin:auto;
+    box-shadow:0 0 20px #00C853;
+}
 
+.red-light{
+    width:24px;
+    height:24px;
+    border-radius:50%;
+    background:#D50000;
+    margin:auto;
+    box-shadow:0 0 20px #D50000;
+}
+
+@keyframes rotate{
     from{
         transform:translate(-50%,-50%) rotate(0deg);
     }
-
     to{
         transform:translate(-50%,-50%) rotate(360deg);
     }
 }
 
-.status-text{
-    text-align:center;
-    font-size:24px;
-    font-weight:bold;
-}
-
 </style>
 """, unsafe_allow_html=True)
 
-# =====================
-# STATUS LOGIC
-# =====================
+# ==========================
+# TITLE
+# ==========================
 
-def get_status(row):
+st.title("💧 Clariflocculator SCADA")
 
-    bridge = str(
-        row["Bridge Running Status"]
-    ).strip()
-
-    blowdown = str(
-        row["Blowdown Valve Status"]
-    ).strip()
-
-    if bridge == "Not OK" or blowdown == "Not OK":
-
-        return {
-            "running":False,
-            "status":"🔴 NOT RUNNING"
-        }
-
-    return {
-        "running":True,
-        "status":"🟢 RUNNING"
-    }
-
-# =====================
-# HEADER
-# =====================
-
-st.title(
-    "💧 Clarifier / Clariflocculator SCADA"
-)
-
-# =====================
-# KPI
-# =====================
-
-running_count = 0
-stop_count = 0
-
-for _, row in df.iterrows():
-
-    result = get_status(row)
-
-    if result["running"]:
-        running_count += 1
-    else:
-        stop_count += 1
-
-c1,c2,c3 = st.columns(3)
-
-c1.metric(
-    "Total Units",
-    len(df)
-)
-
-c2.metric(
-    "Running",
-    running_count
-)
-
-c3.metric(
-    "Not Running",
-    stop_count
-)
-
-# =====================
+# ==========================
 # SIDEBAR
-# =====================
+# ==========================
 
-st.sidebar.title("Control Panel")
+st.sidebar.header("Control Panel")
 
-view_mode = st.sidebar.radio(
-    "View Mode",
+mode = st.sidebar.radio(
+    "View",
     [
         "Single Location",
         "Multiple Locations"
     ]
 )
 
-locations = list(
-    df["Location"].unique()
-)
+locations = sorted(df["Location"].unique())
 
-# =====================
-# DRAW UNIT
-# =====================
+# ==========================
+# UNIT DRAW
+# ==========================
 
 def draw_unit(location):
 
-    row = df[
-        df["Location"] == location
-    ].iloc[0]
+    row = df[df["Location"] == location].iloc[0]
 
-    result = get_status(row)
+    bridge_status = str(
+        row["Bridge Running Status"]
+    ).strip()
 
-    if result["running"]:
+    blowdown_status = str(
+        row["Blowdown Valve Status"]
+    ).strip()
 
-        light = "running-light"
-        bridge_class = "bridge rotate"
+    running = (
+        bridge_status == "OK"
+        and blowdown_status == "OK"
+    )
+
+    if running:
+
+        bridge_class = "bridge running"
+        light = "green-light"
+        text = "🟢 RUNNING"
 
     else:
 
-        light = "stop-light"
-        bridge_class = "bridge stop"
+        bridge_class = "bridge stopped"
+        light = "red-light"
+        text = "🔴 NOT RUNNING"
+
+    problem = "-"
+
+    if "Problem" in df.columns:
+        problem = row["Problem"]
 
     st.markdown(
         f"""
-        <div class="scada-box">
+        <div class="scada-card">
 
-        <h2 style="text-align:center;">
+        <h2 style="text-align:center">
         {location}
         </h2>
 
-        <div class="clarifier">
-
+        <div class="tank">
             <div class="{bridge_class}">
             </div>
-
         </div>
 
         <br>
 
-        <div style="text-align:center;">
-            <span class="{light}"></span>
-        </div>
+        <div class="{light}"></div>
 
-        <p class="status-text">
-        {result["status"]}
-        </p>
+        <h3 style="text-align:center">
+        {text}
+        </h3>
 
         </div>
         """,
@@ -240,43 +182,48 @@ def draw_unit(location):
     )
 
     st.write(
-        "Bridge Status:",
-        row["Bridge Running Status"]
+        "**Bridge Status:**",
+        bridge_status
     )
 
     st.write(
-        "Blowdown Valve Status:",
-        row["Blowdown Valve Status"]
+        "**Blowdown Valve Status:**",
+        blowdown_status
     )
 
-# =====================
-# SINGLE VIEW
-# =====================
+    st.write(
+        "**Problem:**",
+        problem
+    )
 
-if view_mode == "Single Location":
+# ==========================
+# SINGLE LOCATION
+# ==========================
 
-    selected = st.sidebar.selectbox(
-        "Location",
+if mode == "Single Location":
+
+    selected_location = st.sidebar.selectbox(
+        "Select Location",
         locations
     )
 
-    draw_unit(selected)
+    draw_unit(selected_location)
 
-# =====================
-# MULTI VIEW
-# =====================
+# ==========================
+# MULTIPLE LOCATION
+# ==========================
 
 else:
 
-    selected = st.sidebar.multiselect(
-        "Locations",
+    selected_locations = st.sidebar.multiselect(
+        "Select Locations",
         locations,
         default=locations
     )
 
     cols = st.columns(2)
 
-    for i, loc in enumerate(selected):
+    for i, loc in enumerate(selected_locations):
 
         with cols[i % 2]:
 
