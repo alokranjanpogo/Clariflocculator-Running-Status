@@ -1,147 +1,177 @@
 import streamlit as st
 import pandas as pd
-from pathlib import Path
-import base64
-
-# ====================================================
-# PAGE CONFIG
-# ====================================================
 
 st.set_page_config(
-    page_title="Clariflocculator Monitoring",
-    page_icon="💧",
+    page_title="Clariflocculator SCADA",
     layout="wide"
 )
 
-# ====================================================
+# =====================
 # LOAD EXCEL
-# ====================================================
+# =====================
 
-df = pd.read_excel("Clariflocculator Running Status.xlsx")
+df = pd.read_excel(
+    "Clariflocculator Running Status.xlsx"
+)
 
-# ====================================================
+# =====================
 # CSS
-# ====================================================
+# =====================
 
 st.markdown("""
 <style>
 
 .stApp{
-    background-color:#071425;
+    background:#f4f6f8;
 }
 
-h1,h2,h3,h4,p,label{
-    color:white !important;
+.scada-box{
+    background:white;
+    border-radius:15px;
+    padding:20px;
+    box-shadow:0 2px 10px rgba(0,0,0,0.15);
 }
 
-.status-ok{
-    color:#00ff66;
-    font-weight:bold;
+.running-light{
+    width:20px;
+    height:20px;
+    background:#00cc44;
+    border-radius:50%;
+    display:inline-block;
+    box-shadow:0 0 20px #00cc44;
 }
 
-.status-notok{
-    color:red;
+.stop-light{
+    width:20px;
+    height:20px;
+    background:red;
+    border-radius:50%;
+    display:inline-block;
+    box-shadow:0 0 20px red;
+}
+
+.clarifier{
+    position:relative;
+    width:250px;
+    height:250px;
+    border:8px solid #3A7BD5;
+    border-radius:50%;
+    margin:auto;
+    background:#dfefff;
+}
+
+.bridge{
+    position:absolute;
+    top:50%;
+    left:50%;
+    width:180px;
+    height:6px;
+    background:#444;
+    transform-origin:center center;
+}
+
+.rotate{
+    animation:spin 8s linear infinite;
+}
+
+.stop{
+    transform:translate(-50%,-50%);
+}
+
+.rotate{
+    transform:translate(-50%,-50%);
+}
+
+@keyframes spin{
+
+    from{
+        transform:translate(-50%,-50%) rotate(0deg);
+    }
+
+    to{
+        transform:translate(-50%,-50%) rotate(360deg);
+    }
+}
+
+.status-text{
+    text-align:center;
+    font-size:24px;
     font-weight:bold;
 }
 
 </style>
 """, unsafe_allow_html=True)
 
-# ====================================================
-# FIND GIFS AUTOMATICALLY
-# ====================================================
-
-running_gif = None
-not_running_gif = None
-
-for file in Path(".").rglob("*.gif"):
-
-    name = file.name.lower()
-
-    if "running" in name and "not" not in name:
-        running_gif = file
-
-    if "not" in name:
-        not_running_gif = file
-
-# ====================================================
-# GIF DISPLAY
-# ====================================================
-
-def show_gif(gif_path):
-
-    if gif_path is None:
-        st.error("GIF not found in repository")
-        return
-
-    with open(gif_path, "rb") as f:
-        data = f.read()
-
-    encoded = base64.b64encode(data).decode()
-
-    html = f"""
-    <div style="text-align:center;">
-        data:image/gif;base64,{encoded}" width="600">
-    </div>
-    """
-
-    st.markdown(html, unsafe_allow_html=True)
-
-# ====================================================
-# STATUS FUNCTION
-# ====================================================
+# =====================
+# STATUS LOGIC
+# =====================
 
 def get_status(row):
 
-    bridge = str(row["Bridge Running Status"]).strip()
-    blowdown = str(row["Blowdown Valve Status"]).strip()
+    bridge = str(
+        row["Bridge Running Status"]
+    ).strip()
+
+    blowdown = str(
+        row["Blowdown Valve Status"]
+    ).strip()
 
     if bridge == "Not OK" or blowdown == "Not OK":
 
-        return (
-            "🔴 NOT RUNNING",
-            not_running_gif
-        )
+        return {
+            "running":False,
+            "status":"🔴 NOT RUNNING"
+        }
 
-    return (
-        "🟢 RUNNING",
-        running_gif
-    )
+    return {
+        "running":True,
+        "status":"🟢 RUNNING"
+    }
 
-# ====================================================
+# =====================
+# HEADER
+# =====================
+
+st.title(
+    "💧 Clarifier / Clariflocculator SCADA"
+)
+
+# =====================
 # KPI
-# ====================================================
+# =====================
 
 running_count = 0
-stopped_count = 0
+stop_count = 0
 
 for _, row in df.iterrows():
 
-    bridge = str(row["Bridge Running Status"]).strip()
-    blowdown = str(row["Blowdown Valve Status"]).strip()
+    result = get_status(row)
 
-    if bridge == "Not OK" or blowdown == "Not OK":
-        stopped_count += 1
-    else:
+    if result["running"]:
         running_count += 1
+    else:
+        stop_count += 1
 
-# ====================================================
-# HEADER
-# ====================================================
+c1,c2,c3 = st.columns(3)
 
-st.title("💧 Clariflocculator Monitoring Dashboard")
+c1.metric(
+    "Total Units",
+    len(df)
+)
 
-k1, k2, k3 = st.columns(3)
+c2.metric(
+    "Running",
+    running_count
+)
 
-k1.metric("Total Units", len(df))
-k2.metric("Running", running_count)
-k3.metric("Not Running", stopped_count)
+c3.metric(
+    "Not Running",
+    stop_count
+)
 
-st.divider()
-
-# ====================================================
+# =====================
 # SIDEBAR
-# ====================================================
+# =====================
 
 st.sidebar.title("Control Panel")
 
@@ -153,90 +183,101 @@ view_mode = st.sidebar.radio(
     ]
 )
 
-locations = sorted(df["Location"].unique())
+locations = list(
+    df["Location"].unique()
+)
 
-# ====================================================
-# SINGLE LOCATION
-# ====================================================
+# =====================
+# DRAW UNIT
+# =====================
+
+def draw_unit(location):
+
+    row = df[
+        df["Location"] == location
+    ].iloc[0]
+
+    result = get_status(row)
+
+    if result["running"]:
+
+        light = "running-light"
+        bridge_class = "bridge rotate"
+
+    else:
+
+        light = "stop-light"
+        bridge_class = "bridge stop"
+
+    st.markdown(
+        f"""
+        <div class="scada-box">
+
+        <h2 style="text-align:center;">
+        {location}
+        </h2>
+
+        <div class="clarifier">
+
+            <div class="{bridge_class}">
+            </div>
+
+        </div>
+
+        <br>
+
+        <div style="text-align:center;">
+            <span class="{light}"></span>
+        </div>
+
+        <p class="status-text">
+        {result["status"]}
+        </p>
+
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.write(
+        "Bridge Status:",
+        row["Bridge Running Status"]
+    )
+
+    st.write(
+        "Blowdown Valve Status:",
+        row["Blowdown Valve Status"]
+    )
+
+# =====================
+# SINGLE VIEW
+# =====================
 
 if view_mode == "Single Location":
 
-    selected_location = st.sidebar.selectbox(
-        "Select Location",
+    selected = st.sidebar.selectbox(
+        "Location",
         locations
     )
 
-    row = df[df["Location"] == selected_location].iloc[0]
+    draw_unit(selected)
 
-    status, gif_path = get_status(row)
-
-    st.subheader(selected_location)
-
-    show_gif(gif_path)
-
-    st.markdown(f"## {status}")
-
-    c1, c2 = st.columns(2)
-
-    with c1:
-        st.metric(
-            "Bridge Status",
-            row["Bridge Running Status"]
-        )
-
-    with c2:
-        st.metric(
-            "Blowdown Valve Status",
-            row["Blowdown Valve Status"]
-        )
-
-# ====================================================
-# MULTIPLE LOCATIONS
-# ====================================================
+# =====================
+# MULTI VIEW
+# =====================
 
 else:
 
-    selected_locations = st.sidebar.multiselect(
-        "Select Locations",
+    selected = st.sidebar.multiselect(
+        "Locations",
         locations,
         default=locations
     )
 
     cols = st.columns(2)
 
-    for i, location in enumerate(selected_locations):
-
-        row = df[df["Location"] == location].iloc[0]
-
-        status, gif_path = get_status(row)
+    for i, loc in enumerate(selected):
 
         with cols[i % 2]:
 
-            st.subheader(location)
-
-            show_gif(gif_path)
-
-            st.markdown(f"### {status}")
-
-            st.write(
-                "Bridge Status:",
-                row["Bridge Running Status"]
-            )
-
-            st.write(
-                "Blowdown Valve Status:",
-                row["Blowdown Valve Status"]
-            )
-
-            st.divider()
-
-# ====================================================
-# DATA
-# ====================================================
-
-with st.expander("Excel Data"):
-
-    st.dataframe(
-        df,
-        use_container_width=True
-    )
+            draw_unit(loc)
