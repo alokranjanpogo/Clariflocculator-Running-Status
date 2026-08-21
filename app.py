@@ -1,24 +1,24 @@
 import streamlit as st
 import pandas as pd
 from pathlib import Path
+import base64
 
-# ------------------------
+# ==================================
 # PAGE CONFIG
-# ------------------------
+# ==================================
 st.set_page_config(
-    page_title="Clariflocculator Dashboard",
-    page_icon="💧",
+    page_title="Clariflocculator Monitoring",
     layout="wide"
 )
 
-# ------------------------
-# LOAD DATA
-# ------------------------
+# ==================================
+# LOAD EXCEL
+# ==================================
 df = pd.read_excel("Clariflocculator Running Status.xlsx")
 
-# ------------------------
-# CSS
-# ------------------------
+# ==================================
+# DARK THEME
+# ==================================
 st.markdown("""
 <style>
 
@@ -26,103 +26,136 @@ st.markdown("""
     background-color:#071425;
 }
 
-.block-container{
-    padding-top:1rem;
+h1,h2,h3,p,label{
+    color:white !important;
 }
 
-.title{
-    text-align:center;
-    color:white;
-    font-size:36px;
+.status-green{
+    color:#00ff66;
     font-weight:bold;
 }
 
-.info-box{
-    background:#0f2740;
-    padding:15px;
-    border-radius:10px;
+.status-red{
+    color:#ff3b3b;
+    font-weight:bold;
 }
 
 </style>
 """, unsafe_allow_html=True)
 
-# ------------------------
-# STATUS FUNCTION
-# ------------------------
+# ==================================
+# GIF FUNCTION
+# ==================================
+def show_gif(file_path, width=650):
+
+    with open(file_path, "rb") as f:
+        data = f.read()
+
+    data_url = base64.b64encode(data).decode()
+
+    st.markdown(
+        f"""
+        <div style="text-align:center;">
+            data:image/gif;base64,{data_url}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+# ==================================
+# STATUS LOGIC
+# ==================================
 def get_status(row):
 
     bridge = str(row["Bridge Running Status"]).strip()
     blowdown = str(row["Blowdown Valve Status"]).strip()
 
     if bridge == "Not OK" or blowdown == "Not OK":
-        return (
-            "NOT RUNNING",
-            "red",
-            "assets/clariflocculator_not_running.gif"
-        )
 
-    return (
-        "RUNNING",
-        "lime",
-        "assets/clariflocculator_running.gif"
-    )
+        return {
+            "status":"🔴 NOT RUNNING",
+            "gif":"assets/clariflocculator_not_running.gif",
+            "color":"red"
+        }
 
-# ------------------------
+    else:
+
+        return {
+            "status":"🟢 RUNNING",
+            "gif":"assets/clariflocculator_running.gif",
+            "color":"green"
+        }
+
+# ==================================
 # HEADER
-# ------------------------
-st.markdown(
-    "<h1 class='title'>CLARIFLOCCULATOR MONITORING</h1>",
-    unsafe_allow_html=True
-)
+# ==================================
+st.title("💧 CLARIFLOCCULATOR MONITORING")
 
-# ------------------------
-# SIDEBAR
-# ------------------------
-st.sidebar.header("Selection")
+# ==================================
+# KPIs
+# ==================================
+healthy = 0
+alert = 0
 
-mode = st.sidebar.radio(
+for _, row in df.iterrows():
+
+    bridge = str(row["Bridge Running Status"]).strip()
+    blowdown = str(row["Blowdown Valve Status"]).strip()
+
+    if bridge == "Not OK" or blowdown == "Not OK":
+        alert += 1
+    else:
+        healthy += 1
+
+c1, c2, c3 = st.columns(3)
+
+c1.metric("Total Units", len(df))
+c2.metric("Running", healthy)
+c3.metric("Not Running", alert)
+
+st.divider()
+
+# ==================================
+# VIEW MODE
+# ==================================
+view_mode = st.radio(
     "View Mode",
-    [
-        "Single Location",
-        "Multiple Locations"
-    ]
+    ["Single Location", "Multiple Locations"],
+    horizontal=True
 )
 
-locations = list(df["Location"].unique())
+locations = df["Location"].unique().tolist()
 
-# ======================================================
+# ==================================
 # SINGLE LOCATION
-# ======================================================
+# ==================================
+if view_mode == "Single Location":
 
-if mode == "Single Location":
-
-    selected = st.sidebar.selectbox(
+    selected = st.selectbox(
         "Select Location",
         locations
     )
 
     row = df[df["Location"] == selected].iloc[0]
 
-    status, color, gif_path = get_status(row)
+    result = get_status(row)
 
     st.subheader(selected)
 
-    if Path(gif_path).exists():
+    gif_path = Path(result["gif"])
 
-        with open(gif_path, "rb") as file:
-            gif = file.read()
+    if gif_path.exists():
 
-        st.image(
-            gif,
-            width=650
-        )
+        show_gif(gif_path)
 
     else:
-        st.error(f"GIF Not Found: {gif_path}")
+
+        st.error(
+            f"GIF Missing: {gif_path}"
+        )
 
     st.markdown(
-        f"<h2 style='color:{color};'>{status}</h2>",
-        unsafe_allow_html=True
+        f"## {result['status']}"
     )
 
     col1, col2 = st.columns(2)
@@ -139,38 +172,15 @@ if mode == "Single Location":
             row["Blowdown Valve Status"]
         )
 
-    st.markdown("---")
-
-    problem = st.selectbox(
-        "Problem",
-        [
-            "No Problem",
-            "Bridge Jam",
-            "Motor Fault",
-            "Gearbox Issue",
-            "Valve Leakage",
-            "Electrical Fault"
-        ]
-    )
-
-    remarks = st.text_area(
-        "Remarks",
-        "Enter Remarks Here"
-    )
-
-    st.success(f"Problem: {problem}")
-    st.info(f"Remarks: {remarks}")
-
-# ======================================================
-# MULTI LOCATION
-# ======================================================
-
+# ==================================
+# MULTIPLE LOCATION
+# ==================================
 else:
 
-    selected_locations = st.sidebar.multiselect(
+    selected_locations = st.multiselect(
         "Select Locations",
         locations,
-        default=locations[:2]
+        default=locations
     )
 
     cols = st.columns(2)
@@ -179,65 +189,25 @@ else:
 
         row = df[df["Location"] == location].iloc[0]
 
-        status, color, gif_path = get_status(row)
+        result = get_status(row)
 
         with cols[i % 2]:
 
             st.subheader(location)
 
-            if Path(gif_path).exists():
+            gif_path = Path(result["gif"])
 
-                with open(gif_path, "rb") as file:
-                    gif = file.read()
+            if gif_path.exists():
 
-                st.image(
-                    gif,
-                    width=350
+                show_gif(
+                    gif_path,
+                    width=300
                 )
 
             st.markdown(
-                f"""
-                <h3 style='color:{color};'>
-                {status}
-                </h3>
-                """,
-                unsafe_allow_html=True
+                f"### {result['status']}"
             )
 
             st.write(
-                f"Bridge: {row['Bridge Running Status']}"
-            )
-
-            st.write(
-                f"Blowdown: {row['Blowdown Valve Status']}"
-            )
-
-            problem = st.selectbox(
-                f"Problem - {location}",
-                [
-                    "No Problem",
-                    "Bridge Jam",
-                    "Motor Fault",
-                    "Gearbox Issue",
-                    "Valve Leakage",
-                    "Electrical Fault"
-                ],
-                key=f"problem_{location}"
-            )
-
-            remarks = st.text_input(
-                f"Remarks - {location}",
-                key=f"remark_{location}"
-            )
-
-            st.divider()
-
-# ------------------------
-# DATA TABLE
-# ------------------------
-with st.expander("View Data"):
-
-    st.dataframe(
-        df,
-        use_container_width=True
-    )
+                "Bridge:",
+                row["
