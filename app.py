@@ -3,38 +3,75 @@ import pandas as pd
 from pathlib import Path
 import base64
 
+# ====================================================
+# PAGE CONFIG
+# ====================================================
+
 st.set_page_config(
     page_title="Clariflocculator Monitoring",
+    page_icon="💧",
     layout="wide"
 )
 
-# ===============================
+# ====================================================
 # LOAD EXCEL
-# ===============================
+# ====================================================
+
 df = pd.read_excel("Clariflocculator Running Status.xlsx")
 
-# ===============================
-# PAGE STYLE
-# ===============================
+# ====================================================
+# CSS
+# ====================================================
+
 st.markdown("""
 <style>
-.stApp {
-    background-color: #071425;
-    color: white;
+
+.stApp{
+    background-color:#071425;
 }
-h1,h2,h3,label {
-    color: white !important;
+
+h1,h2,h3,h4,p,label{
+    color:white !important;
 }
+
+.status-ok{
+    color:#00ff66;
+    font-weight:bold;
+}
+
+.status-notok{
+    color:red;
+    font-weight:bold;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
-# ===============================
-# GIF DISPLAY FUNCTION
-# ===============================
-def display_gif(gif_path):
+# ====================================================
+# FIND GIFS AUTOMATICALLY
+# ====================================================
 
-    if not Path(gif_path).exists():
-        st.error(f"GIF not found: {gif_path}")
+running_gif = None
+not_running_gif = None
+
+for file in Path(".").rglob("*.gif"):
+
+    name = file.name.lower()
+
+    if "running" in name and "not" not in name:
+        running_gif = file
+
+    if "not" in name:
+        not_running_gif = file
+
+# ====================================================
+# GIF DISPLAY
+# ====================================================
+
+def show_gif(gif_path):
+
+    if gif_path is None:
+        st.error("GIF not found in repository")
         return
 
     with open(gif_path, "rb") as f:
@@ -44,16 +81,16 @@ def display_gif(gif_path):
 
     html = f"""
     <div style="text-align:center;">
-        data:image/gif;base64,{encoded}
+        data:image/gif;base64,{encoded}" width="600">
     </div>
     """
 
     st.markdown(html, unsafe_allow_html=True)
 
-
-# ===============================
+# ====================================================
 # STATUS FUNCTION
-# ===============================
+# ====================================================
+
 def get_status(row):
 
     bridge = str(row["Bridge Running Status"]).strip()
@@ -63,25 +100,20 @@ def get_status(row):
 
         return (
             "🔴 NOT RUNNING",
-            "assets/clariflocculator_not_running.gif"
+            not_running_gif
         )
 
     return (
         "🟢 RUNNING",
-        "assets/clariflocculator_running.gif"
+        running_gif
     )
 
-
-# ===============================
-# HEADER
-# ===============================
-st.title("💧 Clariflocculator Monitoring Dashboard")
-
-# ===============================
+# ====================================================
 # KPI
-# ===============================
-running = 0
-stopped = 0
+# ====================================================
+
+running_count = 0
+stopped_count = 0
 
 for _, row in df.iterrows():
 
@@ -89,99 +121,122 @@ for _, row in df.iterrows():
     blowdown = str(row["Blowdown Valve Status"]).strip()
 
     if bridge == "Not OK" or blowdown == "Not OK":
-        stopped += 1
+        stopped_count += 1
     else:
-        running += 1
+        running_count += 1
 
-c1, c2, c3 = st.columns(3)
+# ====================================================
+# HEADER
+# ====================================================
 
-c1.metric("Total Units", len(df))
-c2.metric("Running", running)
-c3.metric("Stopped", stopped)
+st.title("💧 Clariflocculator Monitoring Dashboard")
+
+k1, k2, k3 = st.columns(3)
+
+k1.metric("Total Units", len(df))
+k2.metric("Running", running_count)
+k3.metric("Not Running", stopped_count)
 
 st.divider()
 
-# ===============================
-# VIEW MODE
-# ===============================
-view = st.radio(
+# ====================================================
+# SIDEBAR
+# ====================================================
+
+st.sidebar.title("Control Panel")
+
+view_mode = st.sidebar.radio(
     "View Mode",
-    ["Single Location", "Multiple Locations"],
-    horizontal=True
+    [
+        "Single Location",
+        "Multiple Locations"
+    ]
 )
 
-locations = list(df["Location"].unique())
+locations = sorted(df["Location"].unique())
 
-# ===============================
+# ====================================================
 # SINGLE LOCATION
-# ===============================
-if view == "Single Location":
+# ====================================================
 
-    location = st.selectbox(
+if view_mode == "Single Location":
+
+    selected_location = st.sidebar.selectbox(
         "Select Location",
         locations
     )
 
-    row = df[df["Location"] == location].iloc[0]
+    row = df[df["Location"] == selected_location].iloc[0]
 
     status, gif_path = get_status(row)
 
-    st.subheader(location)
+    st.subheader(selected_location)
 
-    display_gif(gif_path)
+    show_gif(gif_path)
 
     st.markdown(f"## {status}")
 
-    col1, col2 = st.columns(2)
+    c1, c2 = st.columns(2)
 
-    with col1:
+    with c1:
         st.metric(
             "Bridge Status",
             row["Bridge Running Status"]
         )
 
-    with col2:
+    with c2:
         st.metric(
             "Blowdown Valve Status",
             row["Blowdown Valve Status"]
         )
 
+# ====================================================
+# MULTIPLE LOCATIONS
+# ====================================================
 
-# ===============================
-# MULTIPLE LOCATION
-# ===============================
 else:
 
-    selected_locations = st.multiselect(
+    selected_locations = st.sidebar.multiselect(
         "Select Locations",
         locations,
         default=locations
     )
 
-    for location in selected_locations:
+    cols = st.columns(2)
+
+    for i, location in enumerate(selected_locations):
 
         row = df[df["Location"] == location].iloc[0]
 
         status, gif_path = get_status(row)
 
-        st.markdown("---")
+        with cols[i % 2]:
 
-        st.subheader(location)
+            st.subheader(location)
 
-        display_gif(gif_path)
+            show_gif(gif_path)
 
-        st.markdown(f"### {status}")
+            st.markdown(f"### {status}")
 
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.metric(
-                "Bridge Status",
+            st.write(
+                "Bridge Status:",
                 row["Bridge Running Status"]
             )
 
-        with col2:
-            st.metric(
-                "Blowdown Valve Status",
+            st.write(
+                "Blowdown Valve Status:",
                 row["Blowdown Valve Status"]
             )
+
+            st.divider()
+
+# ====================================================
+# DATA
+# ====================================================
+
+with st.expander("Excel Data"):
+
+    st.dataframe(
+        df,
+        use_container_width=True
+    )
